@@ -91,7 +91,7 @@ class ProduitController extends ResourceController
                 'pu' => 'required|max_length[50]',
                 'quantite' => 'required|max_length[50]',
                 'marge' => 'required|max_length[50]',
-                // 'image_produit' => "uploaded[image_produit]|max_size[image_produit,2048]|is_image[image_produit]|mime_in[image_produit,image/jpg,image/jpeg,image/png]",
+                'image_produit' => "uploaded[image_produit]|max_size[image_produit,2048]|is_image[image_produit]|mime_in[image_produit,image/jpg,image/jpeg,image/png]",
             ];
 
             $input = $this->getRequestInput($this->request);
@@ -101,24 +101,26 @@ class ProduitController extends ResourceController
                 return $this->getResponse($this->validator->getErrors(), ResponseInterface::HTTP_BAD_REQUEST);
             }else{
                 $produit = [];
+                $imgName = [];
 
                 if(!$this->request->getFile('image_produit')) {
-                    // $image = $this->request->getFile('image_produit');
-                    // $image->move('uploads/produits');
+                    $image = $this->request->getFile('image_produit');
+                    $image->move('uploads/produits');
+                    $imgName = "dan";
 
                     $produit = [
                         'DESIGNATION_PRODUIT' => $this->request->getVar('designation'),
-                        'PU_PRODUIT' => $this->request->getVar('pu'),
-                        'QUANTITE_PRODUIT' => $this->request->getVar('quantite'),
-                        'MARGE_PRODUIT' => $this->request->getVar('marge'),
+                        'PU_PRODUIT' => (int) $this->request->getVar('pu'),
+                        'QUANTITE_PRODUIT' => (int) $this->request->getVar('quantite'),
+                        'MARGE_PRODUIT' => (int) $this->request->getVar('marge'),
                         'IMAGE_PRODUIT' => 'uploads/produits'.$image->getClientName()
                     ];
                 }else{
                     $produit = [
                         'DESIGNATION_PRODUIT' => $this->request->getVar('designation'),
-                        'PU_PRODUIT' => $this->request->getVar('pu'),
-                        'QUANTITE_PRODUIT' => $this->request->getVar('quantite'),
-                        'MARGE_PRODUIT' => $this->request->getVar('marge'),
+                        'PU_PRODUIT' => (int) $this->request->getVar('pu'),
+                        'QUANTITE_PRODUIT' => (int) $this->request->getVar('quantite'),
+                        'MARGE_PRODUIT' => (int) $this->request->getVar('marge'),
                     ];
                 }
                 
@@ -127,7 +129,7 @@ class ProduitController extends ResourceController
                 $save = $produitModel->update($id_produit, $produit);
 
                 $response = ['message' => 'Produit modifie avec success'];
-                return $this->getResponse($response, ResponseInterface::HTTP_CREATED);
+                return $this->getResponse($imgName, ResponseInterface::HTTP_CREATED);
             }
         }
 

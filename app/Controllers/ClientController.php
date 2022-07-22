@@ -2,7 +2,10 @@
 
 namespace App\Controllers;
 
-use App\Controllers\BaseController;
+use CodeIgniter\RESTful\ResourceController;
+use CodeIgniter\API\ResponseTrait;
+use CodeIgniter\HTTP\ResponseInterface;
+
 use App\Models\BoutiqueModel;
 use App\Models\UserBoutiqueModel;
 use App\Models\ProduitModel;
@@ -10,17 +13,30 @@ use App\Models\PanierModel;
 use App\Models\PanierProduitModel;
 use App\Models\UserModel;
 
-class ClientController extends BaseController
+
+
+class ClientController extends ResourceController
 {
+    use ResponseTrait;
+
+    // ---- payload data from request ----------
+    public function userPayload()
+    {
+        helper('jwt');
+        $authenticationHeader = $this->request->getServer('HTTP_AUTHORIZATION');
+        return $decodedToken = getUserPayload($authenticationHeader);
+    }
+
     public function index()
     {
-        $current_user = session()->get('id');
+        $current_user = $this->userPayload()->id;
         $data=[];
         $boutiqueModel = new BoutiqueModel();
 
         $data['boutiques'] = $boutiqueModel->get_all();
 
-        return view('client/dashboard', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
+
     }
 
     //enregistrement d'un client par un tenant
@@ -35,19 +51,14 @@ class ClientController extends BaseController
                 'nom' => 'required|min_length[3]|max_length[50]',
                 'postnom' => 'required|max_length[50]',
                 'email' => 'required|min_length[3]|max_length[50]|valid_email',
-                'mdp' => 'required|max_length[50]',
-                // 'image_client' => "uploaded[image_client]|max_size[image_client,2048]|is_image[image_client]|mime_in[image_client,image/jpg,image/jpeg,image/png]",
+                'mdp' => 'required|max_length[50]'
             ];
+            $input = $this->getRequestInput($this->request);
 
-            $session = session();
-
-            if(!$this->validate($rules))
+            if(!$this->validateRequest($input, $rules))
             {
-                $data = $this->validator;
-                $session->setFlashdata('validation', $data->listErrors());
+                return $this->getResponse($this->validator->getErrors(), ResponseInterface::HTTP_BAD_REQUEST);
             }else{
-                // $image = $this->request->getFile('image_client');
-                // $image->move('uploads/clients');
 
                 $client = [
                     'REF_ROLE_USER' => $this->request->getVar('role'),
@@ -69,14 +80,10 @@ class ClientController extends BaseController
                 ];
                 $saveRelation = $user_boutique->save_u_b($relation_U_B);
 
-                if($save) {
-                    $session->setFlashdata('successs', "Client enregistré");
-                }else{
-                    $session->setFlashdata('errorr', "Client non enregistré");
-                }
+                $response = ['message' => 'Client creer avec success'];
+                return $this->getResponse($response, ResponseInterface::HTTP_CREATED);
             }
         }
-        return redirect()->to('/tenant/boutique_view/'.$id_store.'');
     }
 
     //== Activation et desactivation du compte client par un tenant
@@ -96,7 +103,8 @@ class ClientController extends BaseController
 
         $active = $clientModel->update($id, $data);
 
-        return redirect()->to('/tenant/boutique_view/'.$store);
+        $response = ['message' => 'Etat client modifie avec success'];
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
     }
 
     //== Suppression d'un client par un tenant (softDelete)
@@ -106,23 +114,24 @@ class ClientController extends BaseController
         $data = ['ETAT_USER' => 0];
         $active = $clientModel->update($id, $data);
 
-        return redirect()->to('/tenant/boutique_view/'.$store);
+        $response = ['message' => 'Client supprime avec success'];
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
     }
 
     //== Inscription d'un client a une boutique
     public function add_boutique($id_store)
     {
-        $id_user = session()->get('id');
+        $id_user = $this->userPayload()->id;
+        $user_role = $this->userPayload()->role;
         $user_boutique = new UserBoutiqueModel();
-        $session = session();
 
-        $boutique = $user_boutique->get_by_user($id_user);
+        $boutique = $user_boutique->get_by_user($id_user, $user_role);
 
         foreach($boutique as $row)
         {
             if($row['REF_BOUTIQUE'] == $id_store){
-                $session->setFlashdata('error', 'Vous etes membre de cette boutique');
-                return redirect()->to('/client');
+                $response = ['error' => 'Vous etes membre de cette boutique'];
+                return $this->getResponse($response, ResponseInterface::HTTP_OK);
             }
         }
 
@@ -132,9 +141,8 @@ class ClientController extends BaseController
         ];
 
         $saveRelation = $user_boutique->save_u_b($relation_U_B);
-        $session->setFlashdata('success', 'Inscription reussi');
-
-        return redirect()->to('/client');
+        $response = ['Message' => 'Boutique ajoute'];
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
     }
 
     //== lister les produit d'une boutique
@@ -145,27 +153,29 @@ class ClientController extends BaseController
 
         $data['produits'] = $produitModel->get_by_store($id_store);
 
-        return view('client/produit_list', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
+
 
     }
 
     //== Liste des boutique d'un client
     public function boutique()
     {
-        $current_user = session()->get('id');
+        $current_user = $this->userPayload()->id;
+        $user_role = $this->userPayload()->role;
         $data = [];
         $boutiqueModel = new BoutiqueModel();
         
-        $data['boutiques'] = $boutiqueModel->get_by_user($current_user);
+        $data['boutiques'] = $boutiqueModel->get_by_user($current_user, $user_role);
 
-        return view('client/boutique_list', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
         
     }
 
     // Liste des produits et Ajout d'un panier
     public function view_produit_client($id_store)
     {
-        $current_user = session()->get('id');
+        $current_user = $this->userPayload()->id;
         $data = [];
         $produitModel = new Produitmodel();
 
@@ -177,12 +187,14 @@ class ClientController extends BaseController
                 'pu_produit' => 'required',
                 'qu_produit' => 'required',
             ];
-            if(!$this->validate($rules))
+            $input = $this->getRequestInput($this->request);
+
+            if(!$this->validateRequest($input, $rules))
             {
-                $data['validation'] = $this->validator;
+                return $this->getResponse($this->validator->getErrors(), ResponseInterface::HTTP_BAD_REQUEST);
             }else{
                 $panier = [
-                    'REF_USER_PANIER' => session()->get('id'),
+                    'REF_USER_PANIER' => $this->userPayload()->id,
                     'DESIGNATION_PANIER' => $this->request->getVar('designation'),
                 ];
 
@@ -193,26 +205,23 @@ class ClientController extends BaseController
                 {
                     $panier_produit[] = [
                         'REF_PANIER' => $save_panier,
-                        'REF_PRODUIT' => $this->request->getVar('id_produit')[$i],
-                        'PU_PANIER' => $this->request->getVar('pu_produit')[$i],
-                        'QUANTITE_PRODUIT_PANIER' => $this->request->getVar('qu_produit')[$i],
-                        'PT_PANIER' => $this->request->getVar('qu_produit')[$i] * $this->request->getVar('pu_produit')[$i]
+                        'REF_PRODUIT' => (int) $this->request->getVar('id_produit')[$i],
+                        'PU_PANIER' => (int) $this->request->getVar('pu_produit')[$i],
+                        'QUANTITE_PRODUIT_PANIER' => (int) $this->request->getVar('qu_produit')[$i],
+                        'PT_PANIER' => (int) $this->request->getVar('qu_produit')[$i] * (int) $this->request->getVar('pu_produit')[$i]
                     ];
                 }
 
                 $panierProduitModel = new PanierProduitModel();
                 $save_panier_produit = $panierProduitModel->insertBatch($panier_produit);
-                if($save_panier_produit){
-                    $data['success'] = "Panier ajouter";
-                }else{
-                    $data['error'] = "Panier non enregistré";
-                }
+
+                $response = ['Message' => 'Panier ajoute'];
+                return $this->getResponse($response, ResponseInterface::HTTP_OK);
 
             }
         }
 
         $data['produits'] = $produitModel->get_by_store($id_store);
-
-        return view('client/view_produit_list', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
     }
 }

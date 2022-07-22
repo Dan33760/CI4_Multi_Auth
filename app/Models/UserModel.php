@@ -132,4 +132,16 @@ class UserModel extends Model
         return $delete;
     }
 
+    public function findUserByEmail(string $emailAddess)
+    {
+        $user = $this->where(['EMAIL_USER', $emailAddess])->first();
+        
+        if(!empty($user))
+        {
+            throw new Exception('User does not exist for specified email address');
+        }
+        
+        return $user;
+    }
+
 }

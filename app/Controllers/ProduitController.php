@@ -2,11 +2,23 @@
 
 namespace App\Controllers;
 
-use App\Controllers\BaseController;
+use CodeIgniter\RESTful\ResourceController;
 use App\Models\ProduitModel;
+use CodeIgniter\API\ResponseTrait;
+use CodeIgniter\HTTP\ResponseInterface;
 
-class ProduitController extends BaseController
+class ProduitController extends ResourceController
 {
+    use ResponseTrait;
+
+    // ---- payload data from request ----------
+    public function userPayload()
+    {
+        helper('jwt');
+        $authenticationHeader = $this->request->getServer('HTTP_AUTHORIZATION');
+        return $decodedToken = getUserPayload($authenticationHeader);
+    }
+
     //Liste des produits
     public function index()
     {
@@ -20,8 +32,7 @@ class ProduitController extends BaseController
         $data['produits'] = $produitModel->where('ETAT_PRODUIT >=', 1)->paginate($data['perPage']);
         $data['pager'] = $produitModel->pager;
         
-       
-        echo view('tenant/produit_list', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
     }
 
     //== Function pour ajouter un nouveau produit
@@ -39,18 +50,17 @@ class ProduitController extends BaseController
                 'image_produit' => "uploaded[image_produit]|max_size[image_produit,2048]|is_image[image_produit]|mime_in[image_produit,image/jpg,image/jpeg,image/png]",
             ];
 
-            $session = session();
+            $input = $this->getRequestInput($this->request);
 
-            if(!$this->validate($rules))
+            if(!$this->validateRequest($input, $rules))
             {
-                $data = $this->validator;
-                $session->setFlashdata('validation', $data->listErrors());
+                return $this->getResponse($this->validator->getErrors(), ResponseInterface::HTTP_BAD_REQUEST);
             }else{
                 $image = $this->request->getFile('image_produit');
                 $image->move('uploads/produits');
 
                 $produit = [
-                    'REF_BOUTIQUE_PRODUIT' => $this->request->getVar('id'),
+                    'REF_BOUTIQUE_PRODUIT' => $id,
                     'DESIGNATION_PRODUIT' => $this->request->getVar('designation'),
                     'PU_PRODUIT' => $this->request->getVar('pu'),
                     'QUANTITE_PRODUIT' => $this->request->getVar('quantite'),
@@ -61,14 +71,11 @@ class ProduitController extends BaseController
                 $produitModel = new ProduitModel();
                 $save = $produitModel->insert($produit);
 
-                if($save) {
-                    $session->setFlashdata('success', "Produit enregistré");
-                }else{
-                    $session->setFlashdata('error', "Produit non enregistré");
-                }
+                $response = ['message' => 'Produit creer avec success'];
+                return $this->getResponse($response, ResponseInterface::HTTP_CREATED);
             }
         }
-        return redirect()->to('/tenant/boutique_view/'.$id.'');
+        // return redirect()->to('/tenant/boutique_view/'.$id.'');
     }
 
     // Detail et modification d'un produit
@@ -87,18 +94,17 @@ class ProduitController extends BaseController
                 // 'image_produit' => "uploaded[image_produit]|max_size[image_produit,2048]|is_image[image_produit]|mime_in[image_produit,image/jpg,image/jpeg,image/png]",
             ];
 
-            $session = session();
+            $input = $this->getRequestInput($this->request);
 
-            if(!$this->validate($rules))
+            if(!$this->validateRequest($input, $rules))
             {
-                $data_validation = $this->validator;
-                $session->setFlashdata('validation', $data_validation->listErrors());
+                return $this->getResponse($this->validator->getErrors(), ResponseInterface::HTTP_BAD_REQUEST);
             }else{
                 $produit = [];
 
                 if(!$this->request->getFile('image_produit')) {
-                    $image = $this->request->getFile('image_produit');
-                    $image->move('uploads/produits');
+                    // $image = $this->request->getFile('image_produit');
+                    // $image->move('uploads/produits');
 
                     $produit = [
                         'DESIGNATION_PRODUIT' => $this->request->getVar('designation'),
@@ -120,17 +126,14 @@ class ProduitController extends BaseController
                 $produitModel = new ProduitModel();
                 $save = $produitModel->update($id_produit, $produit);
 
-                if($save) {
-                    return redirect()->to('/tenant/boutique_view/'.$store);
-                }else{
-                    $session->setFlashdata('error', "Produit non enregistré");
-                }
+                $response = ['message' => 'Produit modifie avec success'];
+                return $this->getResponse($response, ResponseInterface::HTTP_CREATED);
             }
         }
 
         $data['produit'] = $produitModel->find($id_produit);
 
-        return view('tenant/produit_edit', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_CREATED);
     }
 
     // Activer et desactiver un produit
@@ -150,7 +153,8 @@ class ProduitController extends BaseController
 
         $active = $produitModel->update($id, $data);
 
-        return redirect()->to('/tenant/boutique_view/'.$store);
+        $response = ['message' => 'Etat Produit modifie avec success'];
+        return $this->getResponse($response, ResponseInterface::HTTP_CREATED);
     }
 
     // Suppression d'un produit
@@ -160,6 +164,7 @@ class ProduitController extends BaseController
         $data = ['ETAT_PRODUIT' => 0];
         $active = $produitModel->update($id, $data);
 
-        return redirect()->to('/tenant/boutique_view/'.$store);
+        $response = ['message' => 'Produit supprime avec success'];
+        return $this->getResponse($response, ResponseInterface::HTTP_CREATED);
     }
 }

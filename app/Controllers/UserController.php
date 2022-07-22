@@ -2,20 +2,42 @@
 
 namespace App\Controllers;
 
-use App\Controllers\BaseController;
+use CodeIgniter\RESTful\ResourceController;
+use CodeIgniter\API\ResponseTrait;
+
+use CodeIgniter\HTTP\Response;
+use CodeIgniter\HTTP\ResponseInterface;
+use Config\Services;
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
+
 use App\Models\UserModel;
 use App\Models\RoleModel;
 
-class UserController extends BaseController
+// use \Firebase\JWT\JWT;
+use Exception;
+use ReflectionException;
+
+class UserController extends ResourceController
 {
+    use ResponseTrait;
+
+    // ---- payload data from request ----------
+    public function userPayload()
+    {
+        helper('jwt');
+        $authenticationHeader = $this->request->getServer('HTTP_AUTHORIZATION');
+        return $decodedToken = getUserPayload($authenticationHeader);
+    }
+
     // Se connecter a la plateforme
     public function login()
     {
         $data = [];
-        helper(['form']);
         
         if($this->request->getPost())
         {
+            
             $rules = [
                 'email' => 'required|min_length[6]|max_length[50]|valid_email',
                 'password' => 'required|min_length[6]|max_length[255]|validateUser[email,password]',
@@ -25,45 +47,63 @@ class UserController extends BaseController
                 'password' => ['validateUser' => "L'adresse mail ou le Mot de passe ne correspond pas!"]
             ];
 
-            if(!$this->validate($rules, $errors)) {
-                return view('login', ["validation" => $this->validator]);
+            $input = $this->getRequestInput($this->request);
+
+            if(!$this->validateRequest($input, $rules, $errors)) {
+                return $this->getResponse($this->validator->getErrors(), ResponseInterface::HTTP_BAD_REQUEST);
             }else{
+                
                 $email = $this->request->getVar('email');
                 $userModel = new UserModel();
-
                 $user = $userModel->get_all($email);
-
-                $this->setUserSession($user);
-
+             
                 if($user->DESIGNATION_ROLE == "admin") {
-                    return redirect()->to(base_url('admin'));
+                    return $this->getJWTForUser($input['email']);
                 }
                 elseif($user->DESIGNATION_ROLE == "tenant") {
-                    return redirect()->to(base_url('tenant'));
+                    return $this->getJWTForUser($input['email']);
                 }
                 elseif($user->DESIGNATION_ROLE == "client") {
-                    return redirect()->to(base_url('client'));
+                    return $this->getJWTForUser($input['email']);
                 }
             }
+        
         }
-        return view('login');
+
+        $response = [
+            'message' => 'Connectez-vous ou creer un compte'
+        ];
+
+        return $this->respond($response, 200);
     }
 
-
-    // Fonction pour creer les sessions
-    private function setUserSession($user)
+    //------ Fonction pour creer un jwt pour l'utilisateur
+    public function getJWTForUser(string $email, int $responseCode = ResponseInterface::HTTP_OK)
     {
-        $data = [
-            'id' => $user->ID_USER,
-            'nom' => $user->NOM_USER,
-            'postnom' => $user->POSTNOM_USER,
-            'role' => $user->DESIGNATION_ROLE,
-            'email' => $user->EMAIL_USER,
-            'image' => $user->IMAGE_USER,
-            'isLoggedIn' => true
-        ];
-        session()->set($data);
-        return true;
+        try{
+            $model = new UserModel();
+            $user = $model->get_all($email);
+            $id = $user->ID_USER;
+            $role = $user->DESIGNATION_ROLE;
+            // $token = getSignedJWTForUser($id, $email, $role);
+            unset($user->MDP_USER);
+
+            helper('jwt');
+
+            return $this->getResponse([
+                'message' => 'Utilisateur connecter avec success',
+                'user' => $user,
+                'access_token' => getSignedJWTForUser($id, $email, $role),
+            ]);
+        } catch(Exception $exception) {
+            return $this->getResponse(
+                [
+                    'error' => $exception->getMessage(),
+                ],
+                $responseCode
+            );
+            // return $this->respond($email);
+        }
     }
 
     // Creation d'un compte
@@ -84,9 +124,11 @@ class UserController extends BaseController
 
             ];
 
-            if(!$this->validate($rules))
+            $input = $this->getRequestInput($this->request);
+
+            if(!$this->validateRequest($input, $rules))
             {
-                $data['validation'] = $this->validator;
+                return $this->getResponse($this->validator->getErrors(), ResponseInterface::HTTP_BAD_REQUEST);
             }else{
 
                 $client = [
@@ -98,24 +140,21 @@ class UserController extends BaseController
                 ];
 
                 $clientModel = new UserModel();
-                $save = $clientModel->insert($client);
-                
-                if($save) {
-                    $data['succes'] = "Compte enregistré";
-                }else{
-                    $data['error'] = "Compte non enregistré";
-                }
+                $clientModel->insert($client);
+
+                return $this->getResponse('Client creer avec success', ResponseInterface::HTTP_CREATED);
+
             }
         }
 
-        $data['roles'] = $roleModel->get_client_tenant();
-        return view('create_count', $data);
+        // $data['roles'] = $roleModel->get_client_tenant();
+        // return view('create_count', $data);
     }
     
     // Detail et mofification du profil
     public function profil()
     {
-        $current_user = session()->get('id');
+        $current_user = $this->payload()->id;
         $userModel = new UserModel();
         $data = [];
 
@@ -128,8 +167,6 @@ class UserController extends BaseController
                 'mdp' => 'required|max_length[50]',
                 'mdp_confirm' => 'matches[mdp]',
             ];
-
-            $session = session();
 
             if(!$this->validate($rules))
             {
@@ -157,65 +194,54 @@ class UserController extends BaseController
 
         $data['user'] = $userModel->find($current_user);
 
-        return view('profil', $data);
+        return $this->getResponse($data);
     }
 
     //== Changer la photo de profil
     public function update_picture()
     {
-        $uri = service('uri');
-        if($this->request->getPost())
+        $rules = [
+            'image_user' => "uploaded[image_user]|is_image[image_user]|mime_in[image_user,image/jpg,image/jpeg,image/png]",
+        ];
+        
+        $input = $this->getRequestInput($this->request);
+
+        if(!$this->validateRequest($input, $rules))
         {
-            $rules = [
-                'image_user' => "uploaded[image_user]|is_image[image_user]|mime_in[image_user,image/jpg,image/jpeg,image/png]",
-            ];
-
-            $session = session();
-
-            if(!$this->validate($rules))
-            {
-                $data = $this->validator;
-                $session->setFlashdata('validation', $data->listErrors());
-            }else{
-                $image = $this->request->getFile('image_user');
-                $image->move('uploads/users');
-
-                $client_image = [
-                    'IMAGE_USER' => 'uploads/users/'.$image->getClientName()
-                ];
-                $current_user = session()->get('id');
-
-                $clientModel = new UserModel();
-                $save = $clientModel->update($current_user,$client_image);
-
-                if($save) {
-                    $session->setFlashdata('success', "Photo enregistré");
-                }else{
-                    $session->setFlashdata('error', "Photo non enregistré");
-                }
-            }
+            return $this->getResponse($this->validator->getErrors(), ResponseInterface::HTTP_BAD_REQUEST);
         }
-        return redirect()->to('/'.$uri->getSegment(1).'/profil');
+
+        $image = $this->request->getFile('image_user');
+        $image->move('uploads/users');
+
+        $client_image = [
+            'IMAGE_USER' => 'uploads/users/'.$image->getClientName()
+        ];
+
+        $current_user = $this->userPayload()->id;
+
+        $clientModel = new UserModel();
+        $save = $clientModel->update($current_user,$client_image);
+
+        $response = ['message' => 'Photo du profil modifié'];
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
+
     }
 
     // Suppression du compte d'un client
     public function delete_count()
     {
-        $current_user = session()->get('id');
+        $current_user = $this->userPayload()->id;
         $userModel = new UserModel();
 
         $delete = $userModel->soft_delete($current_user);
-        if($delete){
-            return $this->logout();
-        }else{
-            return redirect()->to('/profil');
-        }
+
+        return $this->respondDeleted($delete);
     }
 
     // Se deconnecter
     public function logout()
     {
-        session()->destroy();
-        return redirect()->to(site_url('login'));
+        // return redirect()->to(site_url('login'));
     }
 }

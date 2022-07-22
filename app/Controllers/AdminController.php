@@ -2,13 +2,18 @@
 
 namespace App\Controllers;
 
-use App\Controllers\BaseController;
+use CodeIgniter\RESTful\ResourceController;
+use CodeIgniter\API\ResponseTrait;
+use CodeIgniter\HTTP\ResponseInterface;
+
 use App\Models\UserModel;
 use App\Models\RoleModel;
 use App\Models\BoutiqueModel;
 
-class AdminController extends BaseController
+class AdminController extends ResourceController
 {
+    use ResponseTrait;
+
     public function index()
     {
         return view('admin/dashboard');
@@ -29,7 +34,7 @@ class AdminController extends BaseController
 
         $data['roles'] = $roleModel->get_all();
 
-        return view('admin/users', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
     }
 
     //== list des boutiques d'un tenant pour l'admin
@@ -37,10 +42,11 @@ class AdminController extends BaseController
     {
         $data = [];
         $boutiqueModel = new BoutiqueModel();
+        $user_role = null;
 
-        $data['boutiques'] = $boutiqueModel->get_by_user($id_tenant);
+        $data['boutiques'] = $boutiqueModel->get_by_user($id_tenant, $user_role);
 
-        return view('admin/boutiques', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
 
     }
 
@@ -56,12 +62,11 @@ class AdminController extends BaseController
                 'email' => 'required|min_length[3]|max_length[50]|valid_email|is_unique[users.EMAIL_USER]',
             ];
 
-            $session = session();
+            $input = $this->getRequestInput($this->request);
 
-            if(!$this->validate($rules))
+            if(!$this->validateRequest($input, $rules))
             {
-                $data = $this->validator;
-                $session->setFlashdata('validation', $data->listErrors());
+                return $this->getResponse($this->validator->getErrors(), ResponseInterface::HTTP_BAD_REQUEST);
             }else{
 
                 $user = [
@@ -73,17 +78,14 @@ class AdminController extends BaseController
                 ];
 
                 $userModel = new UserModel();
-
                 $save = $userModel->insert($user);
+                $response = ['message' => 'Utilisateur creer avec success'];
 
-                if($save) {
-                    $session->setFlashdata('success', "Client enregistré");
-                }else{
-                    $session->setFlashdata('error', "Client non enregistré");
-                }
+                return $this->getResponse($response, ResponseInterface::HTTP_CREATED);
             }
         }
-        return redirect()->to('/admin/users');
+        $response = ['message' => 'Ajouter un utilisateur'];
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
     }
 
     //== Activation d'un utilisateur
@@ -102,8 +104,10 @@ class AdminController extends BaseController
         $data = ['ETAT_USER' => $state];
 
         $active = $clientModel->update($id, $data);
+        $response = ['message' => 'Etat utilisateur modifié'];
 
-        return redirect()->to('/admin/users');
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
+
     }
 
     //== Suppression d'un utilisateur
@@ -113,6 +117,8 @@ class AdminController extends BaseController
         $data = ['ETAT_USER' => 0];
         $active = $clientModel->update($id, $data);
 
-        return redirect()->to('/admin/users');
+        $response = ['message' => 'Utilisateur supprimé'];
+
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
     }
 }

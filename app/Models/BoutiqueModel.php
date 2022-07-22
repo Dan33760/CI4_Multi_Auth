@@ -59,12 +59,12 @@ class BoutiqueModel extends Model
     }
 
     //== recuperer toutes les boutique d'un client ===
-    public function get_by_user($id_user)
+    public function get_by_user($id_user, $user_role)
     {
         $role = "tenant";
-        if(session()->get('role') == "client")
+        if($user_role == "client")
         {
-            $role = session()->get('role');
+            $role = $user_role;
         }
         $builder = $this->db->table('boutiques');
         $builder->select('*');

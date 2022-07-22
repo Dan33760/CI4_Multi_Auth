@@ -2,13 +2,26 @@
 
 namespace App\Controllers;
 
-use App\Controllers\BaseController;
+use CodeIgniter\RESTful\ResourceController;
+use CodeIgniter\API\ResponseTrait;
+use CodeIgniter\HTTP\ResponseInterface;
+
 use App\Models\PanierModel;
 use App\Models\ProduitModel;
 use App\Models\PanierProduitModel;
 
-class PanierController extends BaseController
+class PanierController extends ResourceController
 {
+    use ResponseTrait;
+
+    // ---- payload data from request ----------
+    public function userPayload()
+    {
+        helper('jwt');
+        $authenticationHeader = $this->request->getServer('HTTP_AUTHORIZATION');
+        return $decodedToken = getUserPayload($authenticationHeader);
+    }
+
     public function index()
     { 
         //
@@ -17,19 +30,19 @@ class PanierController extends BaseController
     // Liste des panier d'un client dans une boutique
     public function panier_client($id_store)
     {
-        $current_user = session()->get('id');
+        $current_user = $this->userPayload()->id;
         $data = [];
         $panierModel = new PanierModel();
         $data['paniers'] = $panierModel->get_by_user($current_user, $id_store);
 
-        return view('client/panier_client_list', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
 
     }
 
     //== Voir les details et modifier un panier
     public function panier_detail($id_store,$id_panier)
     {
-        $current_user = session()->get('id');
+        $current_user = $this->userPayload()->id;
         $data = [];
         $produitModel = new ProduitModel();
         $panierModel = new PanierModel();
@@ -76,49 +89,39 @@ class PanierController extends BaseController
         $data['panier'] = $panierModel->get_one($id_panier);
         $data['produits'] = $produitModel->get_by_panier($current_user, $id_panier);
 
-        return view('client/panier_detail', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
     }
 
     //== Supprimer un produit du panier
     public function panier_delete_produit($id_store,$id_panier,$id_produit)
     {
-        $session = session();
         $panierProduitModel = new PanierProduitmodel();
         $delete = $panierProduitModel->delete_produit($id_panier, $id_produit);
-        if($delete){
-            $session->setFlashdata('success', 'Produit retiré du panier');
-            return redirect()->to('client/panier_detail/'.$id_store.'/'.$id_panier);
-        }else{
-            $session->setFlashdata('error', 'Produit non retiré du panier');
-            return redirect()->to('client/panier_detail/'.$id_store.'/'.$id_panier);
-        }
+        
+        $response = ['message' => 'Produit retiré du panier'];
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
     }
 
     //== Valider un panier
     public function valider_panier($id_store,$id_panier)
     {
         $panierModel = new PanierModel();
-        $session = session();
         $valider = $panierModel->validate_panier($id_panier);
-        if($valider){
-            $session->setFlashdata('success', 'Panier validé');
-            return redirect()->to('client/panier_detail/'.$id_store.'/'.$id_panier);
-        }else{
-            $session->setFlashdata('error', 'Panier non validé');
-            return redirect()->to('client/panier_detail/'.$id_store.'/'.$id_panier);
-        }
+
+        $response = ['message' => 'Panier validé'];
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
     }
 
     // Liste des panier d'un client
     public function panier()
     {
-        $current_user = session()->get('id');
+        $current_user = $this->userPayload()->id;
         $panierModel = new PanierModel();
         $data = [];
 
         $data['paniers'] = $panierModel->getAll_by_user($current_user);
 
-        return view('client/paniers', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
 
     }
 }

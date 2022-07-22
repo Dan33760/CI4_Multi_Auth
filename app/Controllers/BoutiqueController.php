@@ -2,20 +2,34 @@
 
 namespace App\Controllers;
 
-use App\Controllers\BaseController;
+use CodeIgniter\RESTful\ResourceController;
+use CodeIgniter\API\ResponseTrait;
+use CodeIgniter\HTTP\ResponseInterface;
+
 use App\Models\BoutiqueModel;
 use App\Models\UserBoutiqueModel;
 use App\Models\ProduitModel;
 use App\Models\RoleModel;
 use App\Models\UserModel;
 
-class BoutiqueController extends BaseController
+class BoutiqueController extends ResourceController
 {
+    use ResponseTrait;
+
+    // ---- payload data from request ----------
+    public function userPayload()
+    {
+        helper('jwt');
+        $authenticationHeader = $this->request->getServer('HTTP_AUTHORIZATION');
+        return $decodedToken = getUserPayload($authenticationHeader);
+    }
+
     public function index()
     {
         $data = [];
         $boutiqueModel = new BoutiqueModel();
-        $id_user = session()->get('id');
+        $id_user = $this->userPayload()->id;
+        $user_role = $this->userPayload()->role;
 
         if($this->request->getPost())
         {
@@ -24,9 +38,11 @@ class BoutiqueController extends BaseController
                 'description' => 'required|min_length[3]'
             ];
 
-            if(!$this->validate($rules))
+            $input = $this->getRequestInput($this->request);
+
+            if(!$this->validateRequest($input, $rules))
             {
-                $data['validation'] = $this->validator;
+                return $this->getResponse($this->validator->getErrors(), ResponseInterface::HTTP_BAD_REQUEST);
             }else{
                 $boutiqueModel = new BoutiqueModel();
                 $user_boutique = new UserBoutiqueModel();
@@ -39,20 +55,17 @@ class BoutiqueController extends BaseController
 
                 $relation_U_B = [
                     'REF_BOUTIQUE' => $saveBoutique,
-                    'REF_USER' => session()->get('id')
+                    'REF_USER' => $this->userPayload()->id
                 ];
                 $saveRelation = $user_boutique->save_u_b($relation_U_B);
 
-                if(!$saveRelation){
-                    $data['success'] = "Boutique ajouter";
-                }else{
-                    $data['error'] = "Boutique non enregistré";
-                }
+                $response = ['message' => 'Boutique creer avec success'];
+                return $this->getResponse($response, ResponseInterface::HTTP_CREATED);
             }
         }
-        $data['boutiques'] = $boutiqueModel->get_by_user($id_user);
+        $data['boutiques'] = $boutiqueModel->get_by_user($id_user, $user_role);
 
-        echo view('tenant/boutique_list', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
     }
 
     // Modifier une boutique
@@ -68,9 +81,11 @@ class BoutiqueController extends BaseController
                 'description' => 'required|min_length[3]'
             ];
 
-            if(!$this->validate($rules))
+            $input = $this->getRequestInput($this->request);
+
+            if(!$this->validateRequest($input, $rules))
             {
-                $data['validation'] = $this->validator;
+                return $this->getResponse($this->validator->getErrors(), ResponseInterface::HTTP_BAD_REQUEST);
             }else{
                 $boutiqueModel = new BoutiqueModel();
 
@@ -78,38 +93,33 @@ class BoutiqueController extends BaseController
                     'DESIGNATION_BOUTIQUE' => $this->request->getVar('designation'),
                     'DESCRIPTION_BOUTIQUE' => $this->request->getVar('description'),
                 ];
-                $id = $this->request->getVar('id');
                 $update = $boutiqueModel->update_boutique($id, $boutique);
 
-                if($update){
-                    return redirect()->to('/tenant/boutique');
-                }else{
-                    $data['error'] = "Données non modifiées";
-                }
+                $response = ['message' => 'Boutique modifiee avec success'];
+                return $this->getResponse($response, ResponseInterface::HTTP_CREATED);
             }
         }
 
         $data['id'] = $id;
         $data['boutique'] = $boutiqueModel->get_one($id);
 
-        echo view('tenant/boutique_edit', $data);
-
+        return $this->getResponse($data, ResponseInterface::HTTP_CREATED);
     }
 
     //== activer ou desactiver une boutique par un tenant
     public function boutique_active($id)
     {
         $this->active($id);
-
-        return redirect()->to('/tenant/boutique');
+        $response = ['message' => 'Etat boutique modifié'];
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
     }
 
     //== activer ou desactiver une boutique par un tenant
     public function boutique_active_admin($id_tenant,$id_store)
     {
         $this->active($id_store);
-
-        return redirect()->to('/admin/boutiques/'.$id_tenant);
+        $response = ['message' => 'Etat boutique modifié'];
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
     }
 
     //== Activation et desactivation d'une boutique 
@@ -136,7 +146,8 @@ class BoutiqueController extends BaseController
     {
         $this->delete($id);
 
-        return redirect()->to('/tenant/boutique');
+        $response = ['message' => 'Boutique supprimeé'];
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
     }
 
     //== Supprimer par un admin
@@ -144,12 +155,13 @@ class BoutiqueController extends BaseController
     {
         $this->delete($id);
 
-        return redirect()->to('/admin/boutiques/'.$id_tenant);
+        $response = ['message' => 'Boutique supprimeé'];
+        return $this->getResponse($response, ResponseInterface::HTTP_OK);
 
     }
 
-    //== fonction de Suppression une boutique
-    public function delete($id)
+    //== fonction de Suppression d'une boutique
+    public function deleteBoutique($id)
     {
         $boutiqueModel = new BoutiqueModel();
         $data = ['ETAT_BOUTIQUE' => 0];
@@ -175,7 +187,7 @@ class BoutiqueController extends BaseController
         $data['clients'] = $userModel->get_by_store($id);
         $data['count_client'] = $userModel->count_client($id);
 
-        return view('tenant/boutique_view', $data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
     }
 
     // Details d'une boutique pour l'admin
@@ -196,6 +208,6 @@ class BoutiqueController extends BaseController
         $data['clients'] = $userModel->get_by_store($id_store);
         $data['count_client'] = $userModel->count_client($id_store);
 
-        return view('admin/boutique_view',$data);
+        return $this->getResponse($data, ResponseInterface::HTTP_OK);
     }
 }
